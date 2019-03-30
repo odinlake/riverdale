@@ -1,0 +1,4 @@
+-- ??? WiFi
+SSID = ""
+PASSWORD = ""
+
