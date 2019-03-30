@@ -1,0 +1,13 @@
+
+TOKEN = "sXvMI72lOr1nZeOIYe9u"
+
+
+def logcpu():
+    print("here")
+    
+
+
+if __name__ == "main":
+    logcpu()
+
+    
