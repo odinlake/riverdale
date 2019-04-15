@@ -3,6 +3,7 @@ import json
 import requests
 
 
+# url with pi3b access token
 URL = "http://192.168.1.15:8080/api/v1/sXvMI72lOr1nZeOIYe9u/telemetry"
 
 

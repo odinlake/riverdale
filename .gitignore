@@ -41,3 +41,4 @@ luac.out
 
 notes.txt
 credentials.lua
+*.pyc
