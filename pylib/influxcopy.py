@@ -11,7 +11,7 @@ CLIENT = {}
 
 def influxdb_client(task=None):
     global CLIENT
-    task = task or (next(CLIENT) if CLIENT else "export")
+    task = task or (next(iter(CLIENT)) if CLIENT else "export")
     if task not in CLIENT:
         dbn = "domoticz" if task == "export" else "domoticz_hist" if task == "import" else None
         client = CLIENT[task] = influxdb.InfluxDBClient('192.168.1.15', 8086, '', '', dbn)
@@ -41,7 +41,7 @@ def get_data_influxdb(day):
     cols = [x['name'] for x in influxdb_client().get_list_measurements()]
     colsq = ", ".join('"{}"'.format(x) for x in cols)
     data = influxdb_query("""
-        SELECT mean(value) as mean 
+        SELECT mean(value) as mean, max(value) as max 
         FROM {} 
         WHERE time >= '{}' AND time < '{}'
         GROUP BY "name", time(5m) fill(none)
@@ -50,9 +50,11 @@ def get_data_influxdb(day):
         return []
     rets = []
     for item in data.raw["series"]:
-        row = (item["name"], item["tags"]["name"], item["values"])
-        if row[-1]:
-            print(row[:2]+(len(row[-1]),))
+        vidx = 2 if item["name"] == "Sound-Level" else 1
+        values = [(v[0], v[vidx]) for v in item["values"]]
+        row = (item["name"], item["tags"]["name"], values)
+        if values:
+            print(row[:2]+(len(values), values[0]))
             rets.append(row)
     return rets
 
@@ -64,16 +66,17 @@ def export_s3():
     bucket = get_s3bucket()
     objs = [o.key for o in bucket.objects.all()]
     day = datetime.utcnow().date()
-    keyexists = False
+    keyexistscount = 0
     print("S3 has objects: {}... ({})".format(objs[:5], len(objs)))
 
-    # always overwrite one date as the most recent date could be incomplete
-    while not keyexists:
-        day -= timedelta(days = 1)
+    # always overwrite two dates as the most recent dates could be incomplete
+    while keyexistscount < 2:
         print("EXPORTING DATE: " + day.isoformat())
         key = "sensordata.{}.json.gz".format(day.isoformat())
-        keyexists = key in objs
+        if key in objs:
+            keyexistscount += 1
         data = get_data_influxdb(day)
+        day -= timedelta(days = 1)
         if data:
             jdata = json.dumps(data)
             zjdata = zlib.compress(jdata.encode("utf-8"))
