@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import json
 import zlib
 import sys
+import socket
 
 
 CLIENT = {}
@@ -11,10 +12,15 @@ CLIENT = {}
 
 def influxdb_client(task=None):
     global CLIENT
+    hname = socket.gethostname()
+    if hname == "ip-172-31-12-210":
+        host = "localhost"
+    else:
+        host = "192.168.1.15"
     task = task or (next(CLIENT) if CLIENT else "export")
     if task not in CLIENT:
         dbn = "domoticz" if task == "export" else "domoticz_hist" if task == "import" else None
-        client = CLIENT[task] = influxdb.InfluxDBClient('192.168.1.15', 8086, '', '', dbn)
+        client = CLIENT[task] = influxdb.InfluxDBClient(host, 8086, '', '', dbn)
         dbns = [x["name"] for x in client.get_list_database()]
         if dbn not in dbns:
             client.create_database(dbn)
