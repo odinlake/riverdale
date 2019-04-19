@@ -5,6 +5,7 @@ import json
 import zlib
 import sys
 import socket
+import re
 
 
 CLIENT = {}
@@ -93,14 +94,36 @@ def export_s3():
             break
 
 
+def get_latest(measurements):
+    """
+    Return the last point for each measurement and tag.
+    """
+    colsq = ", ".join('"{}"'.format(m) for m in measurements)
+    data = influxdb_query("""
+        SELECT value FROM {}
+        GROUP BY * ORDER BY DESC LIMIT 1
+    """.format(colsq))
+    dates = []
+    for seriesd in data.raw["series"]:
+        dstr = seriesd["values"][0][0][:10]
+        dt = datetime.strptime(dstr, '%Y-%m-%d').date()
+        dates.append(dt)
+    dt = max(dates)
+    if dt -timedelta(days=1) in dates:
+        dt -= timedelta(days=1)
+    return dt
+
+
 def import_s3():
     """
     Read data from Amazon S3 bucket and import to local network influxdb.
     """
     client = influxdb_client("import")
     measurements = set(x["name"] for x in client.get_list_measurements())
+    dt = get_latest(measurements)
     bucket = get_s3bucket()
     for obj in bucket.objects.all():
+        
         print("IMPORTING: {}".format(obj.key))
         zjdata = obj.get()["Body"].read()
         jdata = zlib.decompress(zjdata)
@@ -116,6 +139,9 @@ def import_s3():
 
 
 def main():
+    influxdb_client("import")
+    return get_latest(["Temperature", "Humidity"])
+
     if "--export" in sys.argv:
         export_s3()
     elif "--import" in sys.argv:
