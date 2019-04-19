@@ -120,28 +120,32 @@ def import_s3():
     """
     client = influxdb_client("import")
     measurements = set(x["name"] for x in client.get_list_measurements())
-    dt = get_latest(measurements)
+    dt_from = get_latest(measurements)
     bucket = get_s3bucket()
+    print("IMPORTING for dates after: {}".format(dt_from))
     for obj in bucket.objects.all():
-        
-        print("IMPORTING: {}".format(obj.key))
-        zjdata = obj.get()["Body"].read()
-        jdata = zlib.decompress(zjdata)
-        data = json.loads(jdata)
-        for series, tag, values in data:
-            print((series, tag, len(values)))
-            client.write_points([{
-                "measurement": series,
-                "tags": {"name": tag},
-                "fields": {"value": float(v[1])},
-                "time": v[0],
-            } for v in values])
+        try:
+            m = re.match("sensordata.(....-..-..).json.gz", obj.key)
+            dt = datetime.strptime(m.group(1), '%Y-%m-%d').date()
+        except (IndexError, ValueError):
+            print("Failed to parse key: {}".format(obj.key))
+            continue
+        if dt >= dt_from:
+            print("IMPORTING: {}".format(obj.key))
+            zjdata = obj.get()["Body"].read()
+            jdata = zlib.decompress(zjdata)
+            data = json.loads(jdata)
+            for series, tag, values in data:
+                print((series, tag, len(values)))
+                client.write_points([{
+                    "measurement": series,
+                    "tags": {"name": tag},
+                    "fields": {"value": float(v[1])},
+                    "time": v[0],
+                } for v in values])
 
 
 def main():
-    influxdb_client("import")
-    return get_latest(["Temperature", "Humidity"])
-
     if "--export" in sys.argv:
         export_s3()
     elif "--import" in sys.argv:
