@@ -1,9 +1,6 @@
 # Compiled Lua sources
 luac.out
 
-£emacs garbage
-*~
-
 # luarocks build files
 *.src.rock
 *.zip
@@ -42,6 +39,10 @@ luac.out
 *.x86_64
 *.hex
 
+# custom stuff
 notes.txt
-credentials.lua
+credentials.*
 *.pyc
+*~
+
+
