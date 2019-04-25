@@ -9,9 +9,19 @@ import re
 
 
 CLIENT = {}
+SANITY = {
+    "Concentration": (300, 3000),
+    "Humidity": (0, 100),
+    "Sound-Level": (10, 200),
+    "Temperature": (-50, 60),
+    "": (-9999, 9999),
+}
 
 
 def influxdb_client(task=None):
+    """
+    Get or create handle to appropriate influx database.
+    """
     global CLIENT
     hname = socket.gethostname()
     if hname == "ip-172-31-12-210":
@@ -29,11 +39,17 @@ def influxdb_client(task=None):
 
 
 def influxdb_query(q, task=None):
-    print(q)
+    """
+    Log to stdout then execute query.
+    """
+    print(q.rstrip().strip("\r\n"))
     return influxdb_client(task).query(q)
 
 
 def get_s3bucket():
+    """
+    Gut Amazon S3 bucket.
+    """
     s3 = boto3.resource('s3')
     bucket = s3.Bucket('mo-riverdale')
     return bucket
@@ -43,16 +59,34 @@ def is_sane(value, series):
     """
     Return true if value is within reasonable thresholds for series.
     """
-    if series == "Concentration":
-        return 300 < value < 3000
-    if series == "Humidity":
-        return 0 < value < 100
-    if series == "Sound-Level":
-        return 10 < value < 200
-    if series == "Temperature":
-        return -50 < value < 60
-    return -9999 < value < 9999
+    v1, v2 = SANITY.get(series, SANITY[""])
+    return v1 < value < v2
 
+
+def sanitize_influxdb(task=None):
+    """
+    Remove insane values from influxdb.
+    """
+    db = influxdb_client(task)
+    print("Sanitizing db '{}': {}:{}[{}]".format(task, db._host, db._port, db._database))
+    cols = [x['name'] for x in influxdb_client().get_list_measurements()]
+    for series in cols:
+        v1, v2 = SANITY.get(series, SANITY[""])
+        data = influxdb_query("""
+            SELECT time, value FROM "{}" 
+            WHERE value <= {} OR value >= {}
+        """.format(series, v1, v2), task=task)
+        bad_times = []
+        for datum in data.raw.get("series", []):
+            print(datum)
+            print("Found {} bad values in {}".format(len(datum['values']), datum['name']))
+            for t, v in datum['values']:
+                if not is_sane(v, series):
+                    bad_times.append(t)
+        if bad_times:
+            tclause = " OR ".join("time = '{}'".format(t) for t in bad_times)
+            q = ";\n".join("""DELETE FROM "{}" WHERE time = '{}'""".format(series, t) for t in bad_times)
+            result = influxdb_query(q, task=task)
 
 def get_data_influxdb(day):
     """
@@ -166,8 +200,8 @@ def main():
         export_s3()
     elif "--import" in sys.argv:
         import_s3()
+    elif "--sanitize" in sys.argv:
+        sanitize_influxdb("import")
+        sanitize_influxdb("export")
     else:
-        print("Specify --import or --export.")
-
-
-
+        print("nothing to do...")
