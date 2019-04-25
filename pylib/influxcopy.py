@@ -39,6 +39,21 @@ def get_s3bucket():
     return bucket
 
 
+def is_sane(value, series):
+    """
+    Return true if value is within reasonable thresholds for series.
+    """
+    if series == "Concentration":
+        return 300 < value < 3000
+    if series == "Humidity":
+        return 0 < value < 100
+    if series == "Sound-Level":
+        return 10 < value < 200
+    if series == "Temperature":
+        return -50 < value < 60
+    return -9999 < value < 9999
+
+
 def get_data_influxdb(day):
     """
     Retrieve data for date, in 5 min aggregates, from local influxdb.
@@ -57,9 +72,10 @@ def get_data_influxdb(day):
         return []
     rets = []
     for item in data.raw["series"]:
-        vidx = 2 if item["name"] == "Sound-Level" else 1
-        values = [(v[0], v[vidx]) for v in item["values"]]
-        row = (item["name"], item["tags"]["name"], values)
+        series = item["name"]
+        vidx = 2 if  series == "Sound-Level" else 1
+        values = [(v[0], v[vidx]) for v in item["values"] if is_sane(v[vidx], series)]
+        row = (series, item["tags"]["name"], values)
         if values:
             print(row[:2]+(len(values), values[0]))
             rets.append(row)
@@ -142,7 +158,7 @@ def import_s3():
                     "tags": {"name": tag},
                     "fields": {"value": float(v[1])},
                     "time": v[0],
-                } for v in values])
+                } for v in values if is_sane(v, series)])
 
 
 def main():

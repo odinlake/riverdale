@@ -1,7 +1,8 @@
 # SMTP
-smtp_host = "smtp.gmail.com"
-smtp_port = 465
-smtp_sender = ""
-smtp_password = ""
+class smtp(object):
+    host = "smtp.gmail.com"
+    port = 465
+    sender = ""
+    password = ""
 
 
