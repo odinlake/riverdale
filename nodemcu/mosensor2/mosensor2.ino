@@ -1,19 +1,22 @@
 /*
  *  MO home sensor setup for nodeMCU with: 
  *  - SCD30 co2 sensor
+ *  - HCSR501 motion detector
+ *  - Microphone for noise read
  */
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <Wire.h>
 #include "SparkFun_SCD30_Arduino_Library.h"
 #include <ArduinoJson.h>
+#include <riverdale_credentials.h>
+
 
 #define DEBUG false
-
-
-// WiFi
-const char* ssid     = "Valhalla";
-const char* password = "cloudypanda668";
+#define ADJ_MIC_A     64.0
+#define ADJ_MIC_B     25.0
+#define ADJ_TEMP_C    -7.2
+#define ADJ_HUMID_C   15.0
 
 // Domoticz
 const char* domoticz_host = "192.168.1.15";
@@ -35,11 +38,14 @@ void setup()
 {
   Serial.begin(115200);
   delay(100);
-  initWiFi();
+  startupWiFi();
 
   // init I2C and SCD
   Wire.begin(D2, D1);
-  airSensor.begin(); //This will cause readings to occur every two seconds
+  airSensor.begin();
+  airSensor.setMeasurementInterval(5);
+  airSensor.setAltitudeCompensation(30);
+  airSensor.setAmbientPressure(1000);
 
   // init LED
   pinMode(BUILTIN_LED, OUTPUT);
@@ -47,33 +53,9 @@ void setup()
 }
 
 
-void initWiFi()
-{
-  Serial.println();
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("");
-  Serial.println("WiFi connected");  
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.print("Netmask: ");
-  Serial.println(WiFi.subnetMask());
-  Serial.print("Gateway: ");
-  Serial.println(WiFi.gatewayIP());  
-}
-
-
 void sendDomoticz(String url)
 {
-  Serial.println(String("Requesting ") + domoticz_host + ":" + domoticz_port + url);
+  //Serial.println(String("Requesting ") + domoticz_host + ":" + domoticz_port + url);
   if (DEBUG) return;
   
   http.begin(domoticz_host, domoticz_port, url);
@@ -82,16 +64,11 @@ void sendDomoticz(String url)
   {
     String payload = http.getString();
     DeserializationError error = deserializeJson(jsonDoc, payload);
-    Serial.print("Domoticz response... "); 
+    //Serial.print("Domoticz response... "); 
     if (error) Serial.println("failed to parse.");
-    else 
-    {
-      Serial.print((const char *)jsonDoc["title"]);
-      Serial.print(" :: ");
-      Serial.println((const char *)jsonDoc["status"]);
-    }
+  } else {
+    Serial.println(String("HTTP code: ") + httpCode + " " + (httpCode==200?"ok":"fail"));
   }
-  Serial.println(String("HTTP code: ") + httpCode + " " + (httpCode==200?"ok":"fail"));
   http.end();
 }
 
@@ -127,13 +104,22 @@ double sampleSoundVolts(unsigned long window)
 }
 
 
+//
+// read co2 at most every 5s
+//
 void readSCD30()
 {
+  static long lastTrigger = 0;
+  unsigned long tnow = millis();
+  unsigned long ellapsed = tnow - lastTrigger;
+  
+  if (ellapsed < 5000) return;
   if (airSensor.dataAvailable())
   {
+    lastTrigger += ellapsed;
     uint16_t co2 = airSensor.getCO2();
-    float temp = airSensor.getTemperature();
-    float humidity = airSensor.getHumidity();
+    float temp = airSensor.getTemperature() + ADJ_TEMP_C;
+    float humidity = airSensor.getHumidity() + ADJ_HUMID_C;
     
     Serial.print("co2(ppm):");
     Serial.print(co2);
@@ -156,12 +142,12 @@ void readMic(bool doLog)
 {
   static double pastDbs = 0;
   const unsigned int sampleWindow = 50; // ms
-  const double attenuation = 0.95;
+  const double attenuation = 0.85;
   double volts = 0;
   double dbs = 0;
   
   volts = sampleSoundVolts(sampleWindow);
-  dbs = 75 + 20 * log(volts); // determined experimentally using iPhone
+  dbs = ADJ_MIC_A +  ADJ_MIC_B * log(volts); // determined experimentally using iPhone
   pastDbs = attenuation * pastDbs + (1.0 - attenuation) * dbs;
 
   if (doLog)
@@ -176,33 +162,51 @@ void readMic(bool doLog)
 }
 
 
-void readHCSR501()
+//
+// Read often. Records in how many of the last 60 1s intervals there was any motion.
+// Reports number at most every 1s.
+//
+void readHCSR501(bool doLog=true)
 {
+  static int secCount = 0;
   static int motionCount = 0;
+  static long lastTrigger = 0;
+  unsigned long tnow = millis();
+  unsigned long ellapsed = tnow - lastTrigger;
   int motion = digitalRead(hcscr501pin);
+  
   if (motion < 0 || motion > 1)
   {
     Serial.print("ERROR: digitalRead returned ");
     Serial.println(motion);
     return;
   }
-  motionCount += motion * 2 - 1;
-  if (motionCount > 10) motionCount = 10;
-  if (motionCount < 0) motionCount = 0;
-  
-  Serial.print("Motion counter: ");
-  Serial.println(motionCount);
-  sendDomoticz(String(domoticz_url_motion) + motionCount);  
+  secCount += motion;
+  if (ellapsed > 1000)
+  {
+    lastTrigger += ellapsed;
+    motion = (secCount != 0) ? 1 : 0;
+    secCount = 0;
+    motionCount += motion * 2 - 1;
+    if (motionCount > 60) motionCount = 60;
+    if (motionCount < 0) motionCount = 0;
+    if (doLog)
+    {
+      Serial.print("Motion counter: ");
+      Serial.println(motionCount);
+      sendDomoticz(String(domoticz_url_motion) + motionCount);
+    }
+  }
 }
 
 
-// each loop takes about 150 ms
 void loop() 
 {
   static int counter = 0;
   counter = (counter + 1) % 1000;
-  if (counter % 20 == 0) readSCD30();
-  if (counter % 1 == 0) readMic(counter % 20 == 5); // takes about 50 ms
-  if (counter % 20 == 10) readHCSR501();
-  delay(100);
+  readSCD30();
+  readMic(counter % 100 == 50); // takes about 50 ms
+  readHCSR501();
+  ArduinoOTA.handle();
+  delay(10);
 }

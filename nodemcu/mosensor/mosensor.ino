@@ -1,17 +1,21 @@
 /*
  *  MO home sensor setup for nodeMCU with: 
  *  - SCD30 co2 sensor
+ *  - Microphone for noise read
  */
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <Wire.h>
 #include "SparkFun_SCD30_Arduino_Library.h"
 #include <ArduinoJson.h>
+#include <riverdale_credentials.h>
 
 
-// WiFi
-const char* ssid     = "Valhalla";
-const char* password = "cloudypanda668";
+#define DEBUG false
+#define ADJ_MIC_A     75.0
+#define ADJ_MIC_B     20.0
+#define ADJ_TEMP_C    -3.3
+#define ADJ_HUMID_C   11.0
 
 // Domoticz
 const char* domoticz_host = "192.168.1.15";
@@ -31,37 +35,18 @@ void setup()
 {
   Serial.begin(115200);
   delay(100);
-
-  // init WiFi
-  Serial.println();
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
+  startupWiFi();
   
-  WiFi.begin(ssid, password);
-  
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("");
-  Serial.println("WiFi connected");  
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.print("Netmask: ");
-  Serial.println(WiFi.subnetMask());
-  Serial.print("Gateway: ");
-  Serial.println(WiFi.gatewayIP());
-
   // init SCD
   Wire.begin(D1, D2);
-  Serial.println("SCD30 Example");
-  airSensor.begin(); //This will cause readings to occur every two seconds
+  airSensor.begin();
+  airSensor.setMeasurementInterval(5);
+  airSensor.setAltitudeCompensation(30);
+  airSensor.setAmbientPressure(1000);
 
   // init LED
-  pinMode(13, OUTPUT);
-  digitalWrite(13, LOW);
+  pinMode(BUILTIN_LED, OUTPUT);
+  digitalWrite(BUILTIN_LED, LOW);
 }
 
 
@@ -74,16 +59,11 @@ void sendDomoticz(String url)
   {
     String payload = http.getString();
     DeserializationError error = deserializeJson(jsonDoc, payload);
-    Serial.print("Domoticz response... "); 
+    //Serial.print("Domoticz response... "); 
     if (error) Serial.println("failed to parse.");
-    else 
-    {
-      Serial.print((const char *)jsonDoc["title"]);
-      Serial.print(" :: ");
-      Serial.println((const char *)jsonDoc["status"]);
-    }
+  } else {
+    Serial.println(String("HTTP code: ") + httpCode + " " + (httpCode==200?"ok":"fail"));
   }
-  Serial.println(String("HTTP code: ") + httpCode + " " + (httpCode==200?"ok":"fail"));
   http.end();
 }
 
@@ -118,11 +98,17 @@ double sampleSoundVolts(unsigned long window)
 
 void loop() 
 {
+  static long lastTrigger = 0;
+  unsigned long tnow = millis();
+  unsigned long ellapsed = tnow - lastTrigger;
+  
+  if (ellapsed < 5000) return;
   if (airSensor.dataAvailable())
   {
+    lastTrigger += ellapsed;
     uint16_t co2 = airSensor.getCO2();
-    float temp = airSensor.getTemperature();
-    float humidity = airSensor.getHumidity();
+    float temp = airSensor.getTemperature() + ADJ_TEMP_C;
+    float humidity = airSensor.getHumidity() + ADJ_HUMID_C;
     
     Serial.print("co2(ppm):");
     Serial.print(co2);
@@ -144,7 +130,7 @@ void loop()
     delay(10);
   }
   volts /= samples;
-  double dbs = 75 + 20 * log(volts); // determined experimentally using iPhone
+  double dbs = ADJ_MIC_A + ADJ_MIC_B * log(volts); // determined experimentally using iPhone
 
   Serial.print("ADC Amp: ");
   Serial.print(dbs);
@@ -154,5 +140,6 @@ void loop()
 
   sendDomoticz(String(domoticz_url_sound) + dbs);
 
+  ArduinoOTA.handle();
   delay(1000);
 }
