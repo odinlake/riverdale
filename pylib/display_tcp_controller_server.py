@@ -12,7 +12,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 
 
 if __name__ == "__main__":
-    HOST, PORT = "localhost", 8101
+    HOST, PORT = "0.0.0.0", 8101
     server = socketserver.TCPServer((HOST, PORT), MyTCPHandler)
     server.serve_forever()
 
