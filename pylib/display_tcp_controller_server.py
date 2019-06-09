@@ -4,34 +4,56 @@ import subprocess
 import signal
 
 
+PROC_SLIDESHOW = []
+
+
+def check_pid(pid):
+    """ Check For the existence of a unix pid. """
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    else:
+        return True
+                    
+
 class MyTCPHandler(socketserver.BaseRequestHandler):
     """
     The RequestHandler class for our server.
     """
-    def __init__(self):
-        self.proc_slideshow = None
-
     def handle(self):
         self.data = self.request.recv(1024).strip()
         print("{} wrote:".format(self.client_address[0]))
         print(self.data)
-        if self.data == "activate":
+        if self.data == b"activate":
             self.start_slideshow()
-        if self.data == "deactivate":
+        if self.data == b"deactivate":
             self.kill_slideshow()
 
     def kill_slideshow(self):
-        if self.proc_slideshow:
-            os.killpg(self.proc_slideshow.pid, signal.SIGTERM)
-            self.proc_slideshow = None
+        global PROC_SLIDESHOW
+        alive = []
+        for proc in PROC_SLIDESHOW:
+            pid = proc.pid
+            print("checking", pid, "...")
+            if check_pid(pid):
+                alive.append(proc)
+                print("killing:", pid, "...")
+                try:
+                    os.killpg(pid, signal.SIGTERM)
+                except:
+                    print("can't kill it, so assuming dead already...")
+                    alive.pop()
+        PROC_SLIDESHOW = alive
 
     def start_slideshow(self):
         nproc = subprocess.Popen(
-            "sh ~/start-slideshow.sh", stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            shell=True, preexec_fn=os.setsid
+            ["sh", "/home/pi/start-slideshow.sh"], 
+            preexec_fn=os.setsid
         )
+        print("started:", nproc.pid, "...")
         self.kill_slideshow()
-        self.proc_slideshow = nproc
+        PROC_SLIDESHOW.append(nproc)
         
 
 if __name__ == "__main__":
