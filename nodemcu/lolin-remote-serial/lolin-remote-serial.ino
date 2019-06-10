@@ -1,5 +1,10 @@
+/*
+ *  MO home sensor setup for Lolin ESP8266 with: 
+ *  - stock IR shield
+ */
 #include <IRsend.h>
 #include <stdarg.h>
+#include <riverdale_credentials.h>
 
 #define MARANTZ_POWER_1     0x2CD552D
 #define MARANTZ_POWER_2     0x2AD552D
@@ -20,8 +25,9 @@ void customWait(unsigned long ms) { delay(ms); }
 void setup() 
 {
   Serial.begin(115200);
-  for (int i=0; i<2; i++) { Serial.print("."); delay(500); }
-  Serial.println("Hello World.");
+  delay(100);
+  startupWiFi();
+
   pinMode(AMP_ONOFF_PIN, INPUT);
   irSend.begin();
 }
@@ -49,9 +55,12 @@ void loop()
 
   if (ellapsed > 10000 || lastAmplifierStatus != amplifierStatus) {
     lastTrigger += ellapsed;
+    lastAmplifierStatus = amplifierStatus;
     Serial.print(":status=");
     Serial.println(amplifierStatus);
   }
+  
+  ArduinoOTA.handle();
 }
 
 
