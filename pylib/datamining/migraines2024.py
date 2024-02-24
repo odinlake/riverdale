@@ -1,8 +1,18 @@
 import datetime
 import pandas as pd
 from collections import defaultdict
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import matplotlib
+import numpy as np
+
 
 def main():
+    font = {'family' : 'sans',
+            'weight' : 'normal',
+            'size'   : 8}
+    matplotlib.rc('font', **font)
+
     atdate = defaultdict(str)
     data = []
     with open("data/DONE-Activity-11-2-24.csv", "r", encoding="utf-8") as fh:
@@ -18,10 +28,157 @@ def main():
             date, date.strftime("%a"), date.strftime("%Y"), date.strftime("%Y-%m"), comment
         ])
     df = pd.DataFrame(data=data, columns=["date", "weekday", "year", "month", "comment"])
-    df = df.set_index("date")
-    df = df.sort_index()
-    print(df)
-    df.to_excel("data/migraines-2024Jan.xlsx")
+    df_out = df.sort_values(by=['date'], ascending=False)
+    print(df_out)
+    df_out.to_excel("data/migraines-2024Jan.xlsx")
+
+    make_monthly(df)
+    make_weekdayly(df)
+
+    intermediate_html = 'data/migraines-2024Jan.html'
+    to_html_pretty(df_out[["date", "comment"]], intermediate_html, "Migraine Journal")
+
+    import weasyprint
+    out_pdf= 'data/migraines-2024Jan.pdf'
+    weasyprint.HTML(intermediate_html).write_pdf(out_pdf)
+
+
+def make_weekdayly(df):
+    df2 = df[["weekday", "comment"]]
+    df2['weekday'] = pd.Categorical(df2['weekday'], ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+    df2 = df2.groupby("weekday").count()
+    print(df2)
+
+    _fig, ax = plt.subplots()
+    ypos = np.arange(len(df2))
+    ax.barh(ypos, df2["comment"], align='center')
+    ax.set_yticks(ypos, labels=df2.index)
+    ax.invert_yaxis()
+    ax.set_title('Number of Days with Migraine & Sumatriptan by Day of the Week')
+    ax.set_aspect(3)
+
+    plt.savefig("data/migraines-byweekday-2024Jan.svg", pad_inches=0.0, dpi=300)
+    #plt.show()
+
+
+def make_monthly(df):
+    df2 = df[["month", "comment"]].groupby("month").count()
+
+    for year in range(2018, 2025):
+        for month in range(1, 13):
+            if (year == 2018 and month < 7) or (year == 2024 and month > 3):
+                continue
+            idx = f'{year}-{month:02}'
+            if idx not in df2.index:
+                df2.loc[idx] =[0]
+
+    df2 = df2.sort_index()
+    print(df2)
+
+    color_key = {
+        ("2022-03", "2022-09"): "tab:red",
+        ("2022-09", "2023-02"): "tab:blue",
+        ("2023-02", "2024-02"): "tab:red",
+        ("2024-02", "2025-02"): "tab:blue",
+    }
+    colors = []
+    labels = []
+
+    for idx in df2.index:
+        for (d1, d2), color in color_key.items():
+            if d1 <= idx < d2:
+                colors.append(color)
+                break
+        else:
+            colors.append("tab:brown")
+
+    for month in df2.index:
+        if month[-2:] in ('01', '04', '07', '10'):
+            labels.append(month)
+        else:
+            labels.append('')
+
+    _fig, ax = plt.subplots()
+    plt.subplots_adjust(left=0.05, right=1.0, bottom=0.0, top=1.0)
+    ax.bar(df2.index, df2['comment'], color=colors)
+    ax.set_ylabel('')
+    ax.set_title('Number of Days with Migraine & Sumatriptan by Month')
+    ax.set_xticklabels(labels)
+    ax.set_aspect(3)
+    custom_lines = [Line2D([0], [0], color='tab:brown', lw=4),
+                    Line2D([0], [0], color='tab:red', lw=4),
+                    Line2D([0], [0], color='tab:blue', lw=4)]
+    ax.legend(custom_lines, ["none", "propranolol", "topiramate"], title='Prophylaxis')
+    plt.xticks(rotation=30, ha="right")
+
+    plt.savefig("data/migraines-bymonth-2024Jan.svg", pad_inches=0.0, dpi=300)
+    #plt.show()
+
+
+
+def to_html_pretty(df, filename='/tmp/out.html', title=''):
+    '''
+    Write an entire dataframe to an HTML file
+    with nice formatting.
+    Thanks to @stackoverflowuser2010 for the
+    pretty printer see https://stackoverflow.com/a/47723330/362951
+    '''
+    ht = ''
+    if title != '':
+        ht += '<h2> %s </h2>\n' % title
+    ht += df.to_html(classes='wide', escape=False, index=False)
+
+    with open(filename, 'w') as f:
+         f.write(HTML_TEMPLATE1 + ht + HTML_TEMPLATE2)
+
+HTML_TEMPLATE1 = '''
+<html>
+<head>
+<style>
+  h2 {
+    text-align: center;
+    font-family: Helvetica, Arial, sans-serif;
+  }
+  table {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  table, th, td {
+    border: 0px solid black;
+    border-collapse: collapse;
+  }
+  th, td {
+    padding: 5px;
+    text-align: left;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+  }
+  table tbody tr:hover {
+    background-color: #dddddd;
+  }
+  .wide {
+    width: 100%;
+  }
+  body {
+      margin: 0px 0px;
+      padding: 0px 0px;
+  }
+</style>
+</head>
+<body>
+<H4>Mikael Onsj&#246;</H4>
+<H5>''' + str(datetime.date.today()) + '''</H5>
+<P>
+<IMG src="migraines-bymonth-2024Jan.svg"><br>
+<small><i>* est. underreported by 20% from 2022 on, and 40% prior to 2022.</i><small>
+<IMG src="migraines-byweekday-2024Jan.svg">
+</P>
+'''
+
+HTML_TEMPLATE2 = '''
+</body>
+</html>
+'''
 
 if __name__ == "__main__":
     main()
