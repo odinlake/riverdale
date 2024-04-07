@@ -7,6 +7,14 @@ import matplotlib
 import numpy as np
 
 
+INPUT_FILE = "data/DONE-Activity-7-4-24.csv"
+OUTPUT_DATE = "2024March"
+
+OUTPUT_PREFIX = f"data/migraines-{OUTPUT_DATE}"
+OUTPUT_PREFIX_BW = f"data/migraines-byweekday-{OUTPUT_DATE}"
+OUTPUT_PREFIX_BM = f"data/migraines-bymonth-{OUTPUT_DATE}"
+
+
 def main():
     font = {'family' : 'sans',
             'weight' : 'normal',
@@ -15,7 +23,7 @@ def main():
 
     atdate = defaultdict(str)
     data = []
-    with open("data/DONE-Activity-11-2-24.csv", "r", encoding="utf-8") as fh:
+    with open(INPUT_FILE, "r", encoding="utf-8") as fh:
         for line in fh.readlines():
             parts = line.strip().split(",", 6)
             ptype, _, datestr, weekday, _, count, comment = parts
@@ -30,16 +38,16 @@ def main():
     df = pd.DataFrame(data=data, columns=["date", "weekday", "year", "month", "comment"])
     df_out = df.sort_values(by=['date'], ascending=False)
     print(df_out)
-    df_out.to_excel("data/migraines-2024Jan.xlsx")
+    df_out.to_excel(f"{OUTPUT_PREFIX}.xlsx")
 
     make_monthly(df)
     make_weekdayly(df)
 
-    intermediate_html = 'data/migraines-2024Jan.html'
+    intermediate_html = f"{OUTPUT_PREFIX}.html"
     to_html_pretty(df_out[["date", "comment"]], intermediate_html, "Migraine Journal")
 
     import weasyprint
-    out_pdf= 'data/migraines-2024Jan.pdf'
+    out_pdf= f"{OUTPUT_PREFIX}.pdf"
     weasyprint.HTML(intermediate_html).write_pdf(out_pdf)
 
 
@@ -56,8 +64,7 @@ def make_weekdayly(df):
     ax.invert_yaxis()
     ax.set_title('Number of Days with Migraine & Sumatriptan by Day of the Week')
     ax.set_aspect(3)
-
-    plt.savefig("data/migraines-byweekday-2024Jan.svg", pad_inches=0.0, dpi=300)
+    plt.savefig(f"{OUTPUT_PREFIX_BW}.svg", pad_inches=0.0, dpi=300)
     #plt.show()
 
 
@@ -111,7 +118,7 @@ def make_monthly(df):
     ax.legend(custom_lines, ["none", "propranolol", "topiramate"], title='Prophylaxis')
     plt.xticks(rotation=30, ha="right")
 
-    plt.savefig("data/migraines-bymonth-2024Jan.svg", pad_inches=0.0, dpi=300)
+    plt.savefig(f"{OUTPUT_PREFIX_BM}.svg", pad_inches=0.0, dpi=300)
     #plt.show()
 
 
@@ -169,9 +176,9 @@ HTML_TEMPLATE1 = '''
 <H4>Mikael Onsj&#246;</H4>
 <H5>''' + str(datetime.date.today()) + '''</H5>
 <P>
-<IMG src="migraines-bymonth-2024Jan.svg"><br>
+<IMG src="''' + OUTPUT_PREFIX_BM + '''.svg"><br>
 <small><i>* est. underreported by 20% from 2022 on, and 40% prior to 2022.</i><small>
-<IMG src="migraines-byweekday-2024Jan.svg">
+<IMG src="''' + OUTPUT_PREFIX_BW + '''.svg">
 </P>
 '''
 
