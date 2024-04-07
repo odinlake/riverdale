@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import matplotlib
 import numpy as np
+from matplotlib.ticker import FixedLocator
+import matplotlib.ticker
 
 
 INPUT_FILE = "data/DONE-Activity-7-4-24.csv"
@@ -89,7 +91,8 @@ def make_monthly(df):
         ("2024-02", "2025-02"): "tab:blue",
     }
     colors = []
-    labels = []
+    labels = ['' ,'']
+    months = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split()
 
     for idx in df2.index:
         for (d1, d2), color in color_key.items():
@@ -100,10 +103,12 @@ def make_monthly(df):
             colors.append("tab:brown")
 
     for month in df2.index:
-        if month[-2:] in ('01', '04', '07', '10'):
-            labels.append(month)
+        nmonth = int(month[-2:])
+        if nmonth in (1, 4, 7, 10):
+            prettymonth = months[nmonth-1]
+            labels.append(month.split('-')[0] + '-' + prettymonth)
         else:
-            labels.append('')
+            pass
 
     _fig, ax = plt.subplots()
     plt.subplots_adjust(left=0.05, right=1.0, bottom=0.0, top=1.0)
@@ -112,6 +117,12 @@ def make_monthly(df):
     ax.set_title('Number of Days with Migraine & Sumatriptan by Month')
     ax.set_xticklabels(labels)
     ax.set_aspect(3)
+
+    ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(1.0))
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(3.0))
+    ax.tick_params('both', length=6, width=1, which='major', pad=-2)
+    ax.tick_params('both', length=1, width=0.5, which='minor')
+
     custom_lines = [Line2D([0], [0], color='tab:brown', lw=4),
                     Line2D([0], [0], color='tab:red', lw=4),
                     Line2D([0], [0], color='tab:blue', lw=4)]
@@ -176,9 +187,9 @@ HTML_TEMPLATE1 = '''
 <H4>Mikael Onsj&#246;</H4>
 <H5>''' + str(datetime.date.today()) + '''</H5>
 <P>
-<IMG src="''' + OUTPUT_PREFIX_BM + '''.svg"><br>
+<IMG src="''' + OUTPUT_PREFIX_BM.split('/')[-1] + '''.svg"><br>
 <small><i>* est. underreported by 20% from 2022 on, and 40% prior to 2022.</i><small>
-<IMG src="''' + OUTPUT_PREFIX_BW + '''.svg">
+<IMG src="''' + OUTPUT_PREFIX_BW.split('/')[-1] + '''.svg">
 </P>
 '''
 
